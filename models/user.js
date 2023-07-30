@@ -22,6 +22,9 @@ const userSchema = new Schema(
       type: String,
       default: null,
     },
+    avatarURL: {
+      type: String,
+    },
   },
   { versionKey: false, timestamps: true }
 );
@@ -29,14 +32,14 @@ const userSchema = new Schema(
 userSchema.post("save", handleMongooseError);
 
 const registerSchema = Joi.object({
-  password: Joi.string().alphanum().min(4).max(10).required(),
+  password: Joi.string().alphanum().min(4).max(18).required(),
   email: Joi.string()
     .email({ minDomainSegments: 2, tlds: { allow: ["com", "net", "ru"] } })
     .required(),
 });
 
 const rLoginSchema = Joi.object({
-  password: Joi.string().alphanum().min(4).max(10).required(),
+  password: Joi.string().alphanum().min(4).max(18).required(),
   email: Joi.string()
     .email({ minDomainSegments: 2, tlds: { allow: ["com", "net", "ru"] } })
     .required(),
