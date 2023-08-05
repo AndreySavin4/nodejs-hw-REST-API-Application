@@ -1,12 +1,18 @@
 const bcrypt = require("bcrypt");
 const Jimp = require("jimp");
 const jwt = require("jsonwebtoken");
+const { nanoid } = require("nanoid");
 const gravatar = require("gravatar");
 const path = require("path");
 const fs = require("fs/promises");
-const { HttpError } = require("../helpers");
-const { User, registerSchema, rLoginSchema } = require("../models/user");
-const { SECRET_KEY } = process.env;
+const { HttpError, sendEmail } = require("../helpers");
+const {
+  User,
+  registerSchema,
+  rLoginSchema,
+  emailSchema,
+} = require("../models/user");
+const { SECRET_KEY, BASE_URL } = process.env;
 
 const avatarsDir = path.join(__dirname, "../", "public", "avatars");
 
@@ -17,26 +23,78 @@ const register = async (req, res, next) => {
   const { error } = registerSchema.validate(req.body);
   if (error) {
     next(HttpError(400, error.message));
-    // return res.status(400).json({
-    //   message: error.message,
-    // });
   }
   if (user) {
     next(HttpError(409, "Email in use"));
-    // return res.status(409).json({
-    //   message: "Email in use",
-    // });
   }
   const hashPassword = await bcrypt.hash(password, 10);
+  const verificationCode = nanoid();
+
   const newUser = await User.create({
     ...req.body,
     password: hashPassword,
     avatarURL,
+    verificationToken: verificationCode,
   });
+
+  const verifyEmail = {
+    to: email,
+    subject: "Verify your email",
+    text: "Please click this button :)",
+    html: `<a target="_blank" href="${BASE_URL}/api/auth/users/verify/${verificationCode}">Verify email</a>`,
+  };
+
+  await sendEmail(verifyEmail);
 
   res.status(201).json({
     email: newUser.email,
     subscription: newUser.subscription,
+  });
+};
+
+const verifyEmail = async (req, res, next) => {
+  const { verificationToken } = req.params;
+  console.log(verificationToken);
+  const user = User.findOne({ verificationToken });
+  if (!user) {
+    next(HttpError(404, "User not found"));
+  }
+
+  await User.findByIdAndUpdate(user._id, {
+    verify: true,
+    verificationToken: "",
+  });
+
+  res.json({
+    message: "Email verify success",
+  });
+};
+
+const resendEmail = async (req, res, next) => {
+  const { email } = req.body;
+  const { error } = emailSchema.validate(req.body);
+  const user = User.findOne({ email });
+  if (!user) {
+    next(HttpError(400, "Email is not found"));
+  }
+  if (error) {
+    next(HttpError(400, "missing required field email"));
+  }
+  if (user.verify) {
+    next(HttpError(400, "Verification has already been passed"));
+  }
+
+  const verifyEmail = {
+    to: email,
+    subject: "Verify your email",
+    text: "Please click this button :)",
+    html: `<a target="_blank" href="${BASE_URL}/api/auth/users/verify/${user.verificationToken}">Verify email</a>`,
+  };
+
+  await sendEmail(verifyEmail);
+
+  res.json({
+    message: "Verification email sent",
   });
 };
 
@@ -45,25 +103,27 @@ const loginIn = async (req, res, next) => {
   const user = await User.findOne({ email });
   const { error } = rLoginSchema.validate(req.body);
   if (error) {
-    // next(HttpError(400, error.message));
     return res.status(400).json({
       message: error.message,
     });
   }
+  if (!user.verify) {
+    next(HttpError(404, "User not found"));
+  }
   if (!user) {
     next(HttpError(401, "Email or password is wrong"));
-    // return res.status(401).json({ message: "Email or password is wrong" });
   }
+
   const result = await bcrypt.compare(password, user.password);
 
   if (!result) {
     next(HttpError(401, "Email or password is wrong"));
-    // return res.status(401).json({ message: "Email or password is wrong" });
   }
   const payload = {
     id: user._id,
   };
   const token = jwt.sign(payload, SECRET_KEY, { expiresIn: "23h" });
+
   await User.findByIdAndUpdate(user._id, { token });
 
   res.status(200).json({
@@ -121,4 +181,6 @@ module.exports = {
   current,
   logout,
   updateAvatar,
+  verifyEmail,
+  resendEmail,
 };
