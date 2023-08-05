@@ -5,12 +5,18 @@ const {
   current,
   logout,
   updateAvatar,
+  verifyEmail,
+  resendEmail,
 } = require("../../controllers/users");
 const { authentificate, upload } = require("../../middlewares");
 
 const router = express.Router();
 
 router.post("/users/register", register);
+
+router.get("/users/verify/:verificationToken", verifyEmail);
+
+router.post("/users/verify/", resendEmail);
 
 router.post("/users/login", loginIn);
 
